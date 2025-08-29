@@ -1,0 +1,13 @@
+# /etc/etcd/etcd.conf.yml
+name: "{{ etcd_name_prefix }}-{{ inventory_hostname }}"
+data-dir: /var/lib/etcd
+
+listen-client-urls: "http://0.0.0.0:{{ etcd_client_port }}"
+advertise-client-urls: "http://{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}:{{ etcd_client_port }}"
+
+listen-peer-urls: "http://0.0.0.0:{{ etcd_peer_port }}"
+initial-advertise-peer-urls: "http://{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}:{{ etcd_peer_port }}"
+
+initial-cluster: "{% for h in groups['db'] -%}{{ etcd_name_prefix }}-{{ h }}=http://{{ hostvars[h].ansible_host | default(h) }}:{{ etcd_peer_port }}{% if not loop.last %},{% endif %}{% endfor %}"
+initial-cluster-state: new
+initial-cluster-token: etcd-cluster-1

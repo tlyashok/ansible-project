@@ -1,0 +1,35 @@
+- name: Install HAProxy and helpers
+  apt:
+    name:
+      - haproxy
+      - socat
+    state: present
+    update_cache: yes
+
+- name: Enable haproxy in /etc/default/haproxy (Debian/Ubuntu)
+  lineinfile:
+    path: /etc/default/haproxy
+    regexp: '^ENABLED='
+    line: 'ENABLED=1'
+  notify: Restart haproxy
+
+- name: Ensure runtime dir for admin socket exists
+  file:
+    path: /run/haproxy
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy haproxy.cfg
+  template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    mode: '0644'
+  notify: Restart haproxy
+
+- name: Start and enable HAProxy
+  systemd:
+    name: haproxy
+    enabled: yes
+    state: started

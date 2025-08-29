@@ -1,0 +1,106 @@
+---
+# 0) Факты и аккуратная починка dpkg, если он в подвисшем состоянии
+- name: Gather installed packages
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Ensure dpkg is configured (noop if clean)
+  ansible.builtin.command: dpkg --configure -a
+  changed_when: false
+  failed_when: false
+
+# 1) Понять, загружен ли stream-модуль (Debian way)
+- name: Check if stream module is enabled
+  ansible.builtin.stat:
+    path: /etc/nginx/modules-enabled/50-mod-stream.conf
+  register: stream_mod
+
+# 2) Если модуль ещё не включён — убрать наш stream-блок, чтобы apt/dpkg успешно прошёл nginx -t
+- name: Remove our stream include block (until module is enabled)
+  ansible.builtin.blockinfile:
+    path: /etc/nginx/nginx.conf
+    marker: "# {mark} ANSIBLE MANAGED: postgres stream include"
+    state: absent
+  when: not stream_mod.stat.exists
+
+# 3) Установка/дочинка nginx + libnginx-mod-stream с перехватом возможного фейла
+- name: Install/repair nginx and stream module (with rescue)
+  block:
+    - name: Install Nginx with stream module
+      ansible.builtin.apt:
+        name:
+          - "{{ nginx_pkg | default('nginx') }}"
+          - "{{ nginx_stream_pkg | default('libnginx-mod-stream') }}"
+        state: present
+        update_cache: yes
+  rescue:
+    - name: Reconfigure dpkg after apt failure
+      ansible.builtin.command: dpkg --configure -a
+      changed_when: false
+    - name: Retry install Nginx with stream module
+      ansible.builtin.apt:
+        name:
+          - "{{ nginx_pkg | default('nginx') }}"
+          - "{{ nginx_stream_pkg | default('libnginx-mod-stream') }}"
+        state: present
+        update_cache: yes
+
+# 4) Директории под наши конфиги
+- name: Ensure streams-enabled dir exists
+  ansible.builtin.file:
+    path: /etc/nginx/streams-enabled
+    state: directory
+    mode: "0755"
+
+# 5) Включить модуль stream (Debian way)
+- name: Ensure ngx_stream_module is loaded
+  ansible.builtin.copy:
+    dest: /etc/nginx/modules-enabled/50-mod-stream.conf
+    content: "load_module modules/ngx_stream_module.so;\n"
+    mode: "0644"
+  notify: nginx test & reload
+
+# 6) Вернуть наш stream { include ... } после включения модуля
+- name: Inject stream include into nginx.conf
+  ansible.builtin.blockinfile:
+    path: /etc/nginx/nginx.conf
+    marker: "# {mark} ANSIBLE MANAGED: postgres stream include"
+    insertbefore: EOF
+    block: |
+      stream {
+          include /etc/nginx/streams-enabled/*.conf;
+      }
+    validate: "nginx -t -c %s"
+  notify: nginx test & reload
+
+# 7) Стрим-прокси к HAProxy
+- name: Deploy pg stream config
+  ansible.builtin.template:
+    src: pg-streams.conf.j2
+    dest: /etc/nginx/streams-enabled/pg-streams.conf
+    mode: "0644"
+    validate: "nginx -t -c /etc/nginx/nginx.conf"
+  notify: nginx test & reload
+
+# 8) HTTP-виртхост для /stats
+- name: Deploy pg stats vhost
+  ansible.builtin.template:
+    src: pg-stats.conf.j2
+    dest: /etc/nginx/sites-available/pg-stats.conf
+    mode: "0644"
+    validate: "nginx -t -c /etc/nginx/nginx.conf"
+  notify: nginx test & reload
+
+- name: Enable pg stats vhost
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/pg-stats.conf
+    dest: /etc/nginx/sites-enabled/pg-stats.conf
+    state: link
+  notify: nginx test & reload
+
+# 9) Убедиться, что nginx запущен
+- name: Ensure nginx is running
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true

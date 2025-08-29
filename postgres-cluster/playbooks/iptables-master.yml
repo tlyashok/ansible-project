@@ -1,0 +1,24 @@
+- hosts: haproxy
+  become: yes
+  tasks:
+    - name: Install netfilter-persistent
+      ansible.builtin.package:
+        name: netfilter-persistent
+        state: present
+
+    - name: Allow PostgreSQL / HAProxy ports from 0.0.0.0/0
+      ansible.builtin.iptables:
+        chain: INPUT
+        protocol: tcp
+        source: 0.0.0.0/0
+        destination_port: "{{ item }}"
+        jump: ACCEPT
+        rule_num: 1        # правило в начало
+        state: present
+        ip_version: ipv4
+      loop: [15432, 15433, 8080]
+
+    - name: Save iptables rules so they survive reboot
+      ansible.builtin.command: netfilter-persistent save
+      register: save_result
+      changed_when: save_result.rc == 0
