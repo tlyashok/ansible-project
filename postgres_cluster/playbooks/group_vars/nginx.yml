@@ -1,0 +1,4 @@
+nginx_pg_write_listen: 15432
+nginx_pg_read_listen: 15433
+nginx_stats_listen: 8080
+nginx_pkg: nginx-full   # раскомментируйте, если нужен пакет с stream-модулем

@@ -1,0 +1,6 @@
+# group_vars/haproxy.yml
+haproxy_pg_write_port: 5432     # порт для записи (отдаёт только лидера)
+haproxy_pg_read_port:  5433     # порт для чтения (баланс по репликам)
+haproxy_stats_port:    8404
+patroni_rest_port:     8008
+haproxy_nbthread:      2        # подстроить под CPU

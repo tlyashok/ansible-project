@@ -1,0 +1,59 @@
+global
+  log /dev/log local0
+  log /dev/log local1 notice
+  daemon
+  maxconn 10000
+  nbthread {{ haproxy_nbthread }}
+  stats socket /run/haproxy/admin.sock mode 660 level admin
+  stats timeout 30s
+
+defaults
+  log     global
+  mode    tcp
+  option  tcplog
+  option  dontlognull
+  timeout connect 5s
+  timeout client  1m
+  timeout server  1m
+  default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions
+
+# -------- WRITE (leader only)
+frontend pg_write
+  bind *:{{ haproxy_pg_write_port }}
+  default_backend pg_master
+
+backend pg_master
+  mode tcp
+  option httpchk
+  http-check send meth GET uri /master ver HTTP/1.1 hdr Host localhost
+  http-check expect status 200P
+  balance first
+{% for h in groups['db'] %}
+  server {{ h }} {{ hostvars[h].ansible_host }}:5432 check port {{ patroni_rest_port }}
+{% endfor %}
+
+# -------- READ (replicas only)
+frontend pg_read
+  bind *:{{ haproxy_pg_read_port }}
+  default_backend pg_replicas
+
+backend pg_replicas
+  mode tcp
+  option httpchk
+  http-check send meth GET uri /replica ver HTTP/1.1 hdr Host localhost
+  http-check expect status 200
+  balance roundrobin
+{% for h in groups['db'] %}
+  server {{ h }} {{ hostvars[h].ansible_host }}:5432 check port {{ patroni_rest_port }}
+{% endfor %}
+
+# -------- Stats / Prometheus
+frontend stats
+  bind *:{{ haproxy_stats_port }}
+  mode http
+  http-request use-service prometheus-exporter if { path /metrics }
+  stats enable
+  stats uri /stats
+  stats refresh 5s
+  stats show-legends
+  stats admin if TRUE
