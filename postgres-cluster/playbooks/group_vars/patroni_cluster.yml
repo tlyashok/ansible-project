@@ -1,4 +1,0 @@
-cluster_name: "demo-pg"
-patroni_release: "4.0.6"
-superuser_password: "test"
-replicator_password: "test"

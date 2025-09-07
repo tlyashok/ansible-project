@@ -1,5 +1,0 @@
----
-- hosts: haproxy
-  become: yes
-  roles:
-    - nginx
