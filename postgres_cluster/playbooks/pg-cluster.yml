@@ -1,0 +1,21 @@
+---
+# Кластер: etcd + patroni + (кластерный) nginx+haproxy на gateway
+# Запуск: ansible-playbook -i inventory/hosts.ini playbooks/pg-cluster.yml
+
+- name: Patroni and etcd postgres cluster
+  hosts: pg-nodes
+  gather_facts: yes
+  become: yes
+  roles:
+    - role: pg_nodes/pg_cluster
+  tags: [postgres, patroni, etcd]
+
+- name: Pg-cluster gateway
+  hosts: gateway
+  gather_facts: yes
+  become: yes
+  roles:
+    - role: gateway/nginx
+    - role: gateway/haproxy
+    - role: gateway/network
+  tags: [postgres, nginx, haproxy]
